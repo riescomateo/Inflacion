@@ -1,6 +1,4 @@
-from config import Config
-from db_setup import get_engine
+from update_monthly import get_last_date_in_db
 
-Config.validate()
-engine = get_engine()
-print("✅ Conexión exitosa!")
+ultima_fecha = get_last_date_in_db()
+print(f"📅 Última fecha: {ultima_fecha}")
