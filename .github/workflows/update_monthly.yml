@@ -1,10 +1,9 @@
 name: Monthly Inflation Update
 
 on:
+  workflow_dispatch: # Para que puedas probarlo con el botón "Run workflow"
   schedule:
-    # Se ejecuta el día 15 de cada mes a las 15:00 UTC (ajustar según cuando INDEC publica)
-    - cron: '0 15 15 * *'
-  workflow_dispatch: # Permite ejecutarlo manualmente para probar
+    - cron: '0 15 15 * *' # Se ejecuta el 15 de cada mes
 
 jobs:
   update-db:
@@ -24,11 +23,11 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run update script
+        # ESTA ES LA PARTE QUE TE FALTA O TIENE UN ERROR:
         env:
-          # Aquí vinculamos los secretos de GitHub con las variables que espera tu script
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
           DB_PORT: ${{ secrets.DB_PORT }}
-        run: python update_monthly.py # CAMBIA ESTO por el nombre real de tu script
+        run: python update_monthly.py
