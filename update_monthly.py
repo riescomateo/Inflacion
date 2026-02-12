@@ -15,135 +15,136 @@ from config import Config
 from db_setup import get_engine, setup_db
 import sys
 
-# URLs de descarga (mismas que en el scraper original)
-URLS_DESCARGA = {
-    'nivel_general_categorias': {
+# Download URLs (same as in the original scraper)
+DOWNLOAD_URLS = {
+    'general_level_categories': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.12/download/ipc-incidencia-categorias-nivel-general.csv',
-        'descripcion': 'IPC Nivel General y Categorías'
+        'description': 'IPC Nivel General y Categorías'
     },
-    'divisiones_region': {
+    'divisions_by_region': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.10/download/ipc-incidencia-absoluta-mensual-region-capitulo.csv',
-        'descripcion': 'IPC Divisiones por Región'
+        'description': 'IPC Divisiones por Región'
     },
-    'bienes_servicios': {
+    'goods_services': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.11/download/ipc-incidencia-mensual-bienes-servicios.csv',
-        'descripcion': 'IPC Bienes y Servicios'
+        'description': 'IPC Bienes y Servicios'
     }
 }
 
 
 def get_last_date_in_db():
     """
-    Obtiene la última fecha registrada en la base de datos
+    Gets the most recent date recorded in the database
     """
     engine = get_engine()
-    query = "SELECT MAX(fecha) as ultima_fecha FROM fact_inflacion"
+    query = "SELECT MAX(date) as last_date FROM fact_inflation"
     
     try:
         with engine.connect() as conn:
             result = pd.read_sql(query, conn)
-            ultima_fecha = result['ultima_fecha'].iloc[0]
+            last_date = result['last_date'].iloc[0]
             
-            if pd.isna(ultima_fecha):
+            if pd.isna(last_date):
                 return None
             
-            return pd.to_datetime(ultima_fecha)
+            return pd.to_datetime(last_date)
     except Exception as e:
-        print(f"⚠️  Error al obtener última fecha: {e}")
+        print(f"⚠️  Error getting last date: {e}")
         return None
 
 
-def extraer_metadata(nombre_serie, tipo_dataset):
+def extract_metadata(series_name, dataset_type):
     """
-    Extrae región, categoría y clasificación del nombre de la serie
-    (Misma función que en el scraper original)
+    Extracts region, category and classification from the series name.
+    Search strings are kept in Spanish to match source data.
+    Returned values are also kept in Spanish for data consistency.
     """
-    nombre = str(nombre_serie).lower().replace('_', ' ')
+    name = str(series_name).lower().replace('_', ' ')
     
-    # Detectar región
+    # Detect region
     region = "Nacional"
-    if 'gba' in nombre:
+    if 'gba' in name:
         region = "GBA"
-    elif 'pampeana' in nombre:
+    elif 'pampeana' in name:
         region = "Pampeana"
-    elif 'noa' in nombre or 'noroeste' in nombre:
+    elif 'noa' in name or 'noroeste' in name:
         region = "NOA"
-    elif 'nea' in nombre or 'noreste' in nombre:
+    elif 'nea' in name or 'noreste' in name:
         region = "NEA"
-    elif 'cuyo' in nombre:
+    elif 'cuyo' in name:
         region = "Cuyo"
-    elif 'patagonia' in nombre:
+    elif 'patagonia' in name:
         region = "Patagonia"
     
-    # Determinar categoría y clasificación según tipo de dataset
-    if tipo_dataset == 'nivel_general_categorias':
-        categoria = "Análisis"
+    # Determine category and classification based on dataset type
+    if dataset_type == 'general_level_categories':
+        category = "Análisis"
         
-        if 'nivel general' in nombre:
-            categoria = "Nivel General"
-            clasificacion = "Total"
-        elif 'nucleo' in nombre or 'núcleo' in nombre:
-            clasificacion = "Núcleo"
-        elif 'regulado' in nombre:
-            clasificacion = "Regulados"
-        elif 'estacional' in nombre:
-            clasificacion = "Estacionales"
+        if 'nivel general' in name:
+            category = "Nivel General"
+            classification = "Total"
+        elif 'nucleo' in name or 'núcleo' in name:
+            classification = "Núcleo"
+        elif 'regulado' in name:
+            classification = "Regulados"
+        elif 'estacional' in name:
+            classification = "Estacionales"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
-    elif tipo_dataset == 'divisiones_region':
-        categoria = "División"
+    elif dataset_type == 'divisions_by_region':
+        category = "División"
         
-        if 'alimentos bebidas no alcoholica' in nombre:
-            clasificacion = "Alimentos y bebidas"
-        elif 'bebidas alcoholica' in nombre or 'tabaco' in nombre:
-            clasificacion = "Bebidas alcohólicas y tabaco"
-        elif 'prenda' in nombre or 'vestir' in nombre or 'calzado' in nombre:
-            clasificacion = "Prendas de vestir y calzado"
-        elif 'vivienda' in nombre or 'agua' in nombre or 'electricidad' in nombre or 'combustible' in nombre:
-            clasificacion = "Vivienda y servicios básicos"
-        elif 'equipamiento' in nombre or 'mantenimiento' in nombre:
-            clasificacion = "Equipamiento del hogar"
-        elif 'salud' in nombre:
-            clasificacion = "Salud"
-        elif 'transporte' in nombre:
-            clasificacion = "Transporte"
-        elif 'comunicacion' in nombre:
-            clasificacion = "Comunicación"
-        elif 'recreacion' in nombre or 'cultura' in nombre:
-            clasificacion = "Recreación y cultura"
-        elif 'educacion' in nombre:
-            clasificacion = "Educación"
-        elif 'restaurante' in nombre or 'hotel' in nombre:
-            clasificacion = "Restaurantes y hoteles"
-        elif 'otros' in nombre or 'bienes servicios' in nombre:
-            clasificacion = "Bienes y servicios varios"
+        if 'alimentos bebidas no alcoholica' in name:
+            classification = "Alimentos y bebidas"
+        elif 'bebidas alcoholica' in name or 'tabaco' in name:
+            classification = "Bebidas alcohólicas y tabaco"
+        elif 'prenda' in name or 'vestir' in name or 'calzado' in name:
+            classification = "Prendas de vestir y calzado"
+        elif 'vivienda' in name or 'agua' in name or 'electricidad' in name or 'combustible' in name:
+            classification = "Vivienda y servicios básicos"
+        elif 'equipamiento' in name or 'mantenimiento' in name:
+            classification = "Equipamiento del hogar"
+        elif 'salud' in name:
+            classification = "Salud"
+        elif 'transporte' in name:
+            classification = "Transporte"
+        elif 'comunicacion' in name:
+            classification = "Comunicación"
+        elif 'recreacion' in name or 'cultura' in name:
+            classification = "Recreación y cultura"
+        elif 'educacion' in name:
+            classification = "Educación"
+        elif 'restaurante' in name or 'hotel' in name:
+            classification = "Restaurantes y hoteles"
+        elif 'otros' in name or 'bienes servicios' in name:
+            classification = "Bienes y servicios varios"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
-    elif tipo_dataset == 'bienes_servicios':
-        categoria = "Naturaleza"
+    elif dataset_type == 'goods_services':
+        category = "Naturaleza"
         
-        if 'bien' in nombre and 'servicio' not in nombre:
-            clasificacion = "Bienes"
-        elif 'servicio' in nombre:
-            clasificacion = "Servicios"
+        if 'bien' in name and 'servicio' not in name:
+            classification = "Bienes"
+        elif 'servicio' in name:
+            classification = "Servicios"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
     else:
-        categoria = "Otros"
-        clasificacion = nombre
+        category = "Otros"
+        classification = name
     
-    return region, categoria, clasificacion
+    return region, category, classification
 
 
-def descargar_y_procesar_csv(nombre, config, fecha_inicio):
+def download_and_process_csv(name, config, start_date):
     """
-    Descarga y procesa un CSV al formato requerido
+    Downloads and processes a CSV into the required format
     """
     print(f"\n{'='*70}")
-    print(f"Descargando: {nombre}")
+    print(f"Downloading: {name}")
     print(f"URL: {config['url']}")
     print('='*70)
     
@@ -152,34 +153,34 @@ def descargar_y_procesar_csv(nombre, config, fecha_inicio):
         response.raise_for_status()
         
         df = pd.read_csv(StringIO(response.text))
-        print(f"✓ Descargado: {len(df)} filas")
+        print(f"✓ Downloaded: {len(df)} rows")
         
-        fecha_col = df.columns[0]
-        df[fecha_col] = pd.to_datetime(df[fecha_col])
+        date_col = df.columns[0]
+        df[date_col] = pd.to_datetime(df[date_col])
         
-        # Filtrar por fecha
-        df_filtrado = df[df[fecha_col] >= fecha_inicio].copy()
-        print(f"✓ Filtrado desde {fecha_inicio}: {len(df_filtrado)} filas")
+        # Filter by date
+        df_filtered = df[df[date_col] >= start_date].copy()
+        print(f"✓ Filtered from {start_date}: {len(df_filtered)} rows")
         
-        # Convertir a formato largo
+        # Convert to long format
         df_long = pd.melt(
-            df_filtrado,
-            id_vars=[fecha_col],
-            var_name='serie_original',
-            value_name='valor'
+            df_filtered,
+            id_vars=[date_col],
+            var_name='original_series',
+            value_name='value'
         )
         
-        df_long = df_long.rename(columns={fecha_col: 'indice_tiempo'})
+        df_long = df_long.rename(columns={date_col: 'time_index'})
         
-        # Extraer metadata
-        df_long[['region', 'categoria', 'clasificacion']] = df_long['serie_original'].apply(
-            lambda x: pd.Series(extraer_metadata(x, nombre))
+        # Extract metadata
+        df_long[['region', 'category', 'classification']] = df_long['original_series'].apply(
+            lambda x: pd.Series(extract_metadata(x, name))
         )
         
-        df_long = df_long.drop('serie_original', axis=1)
-        df_long = df_long.dropna(subset=['valor'])
+        df_long = df_long.drop('original_series', axis=1)
+        df_long = df_long.dropna(subset=['value'])
         
-        print(f"✓ Procesado: {len(df_long)} registros")
+        print(f"✓ Processed: {len(df_long)} records")
         
         return df_long
         
@@ -188,150 +189,155 @@ def descargar_y_procesar_csv(nombre, config, fecha_inicio):
         return None
 
 
-def actualizar_dimensiones(df, conn):
+def update_dimensions(df, conn):
     """
-    Actualiza las tablas de dimensiones con nuevos valores si existen
+    Updates dimension tables with new values if they exist
     """
-    # Actualizar dim_region
-    regiones = df[['region']].drop_duplicates()
-    for reg in regiones['region']:
+    # Update dim_region
+    regions = df[['region']].drop_duplicates()
+    for reg in regions['region']:
         conn.execute(
-            text("INSERT INTO dim_region (region_nombre) VALUES (:r) ON CONFLICT DO NOTHING"),
+            text("INSERT INTO dim_region (region_name) VALUES (:r) ON CONFLICT DO NOTHING"),
             {"r": reg}
         )
     
-    # Actualizar dim_categoria
-    cats = df[['categoria', 'clasificacion']].drop_duplicates()
+    # Update dim_category
+    cats = df[['category', 'classification']].drop_duplicates()
     for _, row in cats.iterrows():
         conn.execute(
-            text("INSERT INTO dim_categoria (categoria_nombre, clasificacion) VALUES (:n, :c) ON CONFLICT DO NOTHING"),
-            {"n": row['categoria'], "c": row['clasificacion']}
+            text("INSERT INTO dim_category (category_name, classification) VALUES (:n, :c) ON CONFLICT DO NOTHING"),
+            {"n": row['category'], "c": row['classification']}
         )
     
     conn.commit()
 
 
-def insertar_hechos(df, conn):
+def insert_facts(df, conn):
     """
-    Inserta los nuevos datos en fact_inflacion
+    Inserts new data into fact_inflation
     """
-    # Obtener mapeos de IDs
+    # Get ID mappings
     res_reg = pd.read_sql("SELECT * FROM dim_region", conn)
-    res_cat = pd.read_sql("SELECT * FROM dim_categoria", conn)
+    res_cat = pd.read_sql("SELECT * FROM dim_category", conn)
     
-    dict_reg = dict(zip(res_reg['region_nombre'], res_reg['region_id']))
-    dict_cat = dict(zip(res_cat['categoria_nombre'], res_cat['categoria_id']))
-    
+    dict_reg = dict(zip(res_reg['region_name'], res_reg['region_id']))
+
+    # Composite key mapping for categories (category_name + classification)
+    dict_cat = {}
+    for _, row in res_cat.iterrows():
+        key = (row['category_name'], row['classification'])
+        dict_cat[key] = row['category_id']
+
     df['region_id'] = df['region'].map(dict_reg)
-    df['categoria_id'] = df['categoria'].map(dict_cat)
+    df['category_id'] = df.apply(lambda x: dict_cat.get((x['category'], x['classification'])), axis=1)
     
-    # Insertar con UPSERT
-    insertados = 0
-    actualizados = 0
+    # Insert with UPSERT
+    inserted = 0
+    updated = 0
     
     for _, row in df.iterrows():
-        query_insert = """
-        INSERT INTO fact_inflacion (fecha, region_id, categoria_id, valor_indice)
-        VALUES (:f, :r_id, :c_id, :v)
-        ON CONFLICT (fecha, region_id, categoria_id) 
-        DO UPDATE SET valor_indice = EXCLUDED.valor_indice
+        insert_query = """
+        INSERT INTO fact_inflation (date, region_id, category_id, index_value)
+        VALUES (:d, :r_id, :c_id, :v)
+        ON CONFLICT (date, region_id, category_id) 
+        DO UPDATE SET index_value = EXCLUDED.index_value
         RETURNING (xmax = 0) AS inserted
         """
-        result = conn.execute(text(query_insert), {
-            "f": row['indice_tiempo'],
+        result = conn.execute(text(insert_query), {
+            "d": row['time_index'],
             "r_id": row['region_id'],
-            "c_id": row['categoria_id'],
-            "v": row['valor']
+            "c_id": row['category_id'],
+            "v": row['value']
         })
         
         was_inserted = result.fetchone()[0]
         if was_inserted:
-            insertados += 1
+            inserted += 1
         else:
-            actualizados += 1
+            updated += 1
     
     conn.commit()
     
-    return insertados, actualizados
+    return inserted, updated
 
 
 def main():
     """
-    Función principal de actualización automática
+    Main update function
     """
     print("=" * 80)
-    print("ACTUALIZACIÓN AUTOMÁTICA DE DATOS IPC")
+    print("AUTOMATED IPC DATA UPDATE")
     print("=" * 80)
-    print(f"Fecha de ejecución: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Execution date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 80)
     
     try:
-        # 1. Verificar estructura de DB
+        # 1. Verify DB structure
         setup_db()
         
-        # 2. Obtener última fecha en DB
-        ultima_fecha_db = get_last_date_in_db()
+        # 2. Get last date in DB
+        last_date_in_db = get_last_date_in_db()
         
-        if ultima_fecha_db is None:
-            print("\n⚠️  La base de datos está vacía.")
-            print("Ejecuta primero el script de carga inicial: db_setup_secure.py")
+        if last_date_in_db is None:
+            print("\n⚠️  The database is empty.")
+            print("Run the initial load script first: db_setup.py")
             sys.exit(1)
         
-        print(f"\n📅 Última fecha en DB: {ultima_fecha_db.strftime('%Y-%m-%d')}")
+        print(f"\n📅 Last date in DB: {last_date_in_db.strftime('%Y-%m-%d')}")
         
-        # 3. Calcular fecha de inicio para la actualización
-        # Descargamos desde 2 meses antes por si hay revisiones
-        fecha_inicio = (ultima_fecha_db - timedelta(days=60)).replace(day=1)
-        print(f"📥 Descargando datos desde: {fecha_inicio.strftime('%Y-%m-%d')}")
+        # 3. Calculate start date for the update
+        # Download from 2 months back in case of revisions
+        start_date = (last_date_in_db - timedelta(days=60)).replace(day=1)
+        print(f"📥 Downloading data from: {start_date.strftime('%Y-%m-%d')}")
         
-        # 4. Descargar datos actualizados
+        # 4. Download updated data
         dataframes = []
-        for nombre, config in URLS_DESCARGA.items():
-            df = descargar_y_procesar_csv(nombre, config, fecha_inicio)
+        for name, config in DOWNLOAD_URLS.items():
+            df = download_and_process_csv(name, config, start_date)
             if df is not None:
                 dataframes.append(df)
         
         if not dataframes:
-            print("\n❌ No se pudieron descargar datos")
+            print("\n❌ Could not download data")
             sys.exit(1)
         
-        # 5. Consolidar datos
-        df_nuevo = pd.concat(dataframes, ignore_index=True)
-        df_nuevo['indice_tiempo'] = pd.to_datetime(df_nuevo['indice_tiempo'])
+        # 5. Consolidate data
+        df_new = pd.concat(dataframes, ignore_index=True)
+        df_new['time_index'] = pd.to_datetime(df_new['time_index'])
         
-        # 6. Filtrar solo datos realmente nuevos
-        df_nuevo = df_nuevo[df_nuevo['indice_tiempo'] >= ultima_fecha_db]
+        # 6. Filter only truly new data
+        df_new = df_new[df_new['time_index'] >= last_date_in_db]
         
-        if len(df_nuevo) == 0:
-            print("\n✅ No hay datos nuevos para actualizar")
-            print("La base de datos está al día!")
+        if len(df_new) == 0:
+            print("\n✅ No new data to update")
+            print("The database is up to date!")
             return
         
-        print(f"\n📊 Datos nuevos encontrados:")
-        print(f"   Registros: {len(df_nuevo)}")
-        print(f"   Período: {df_nuevo['indice_tiempo'].min().strftime('%Y-%m-%d')} a {df_nuevo['indice_tiempo'].max().strftime('%Y-%m-%d')}")
+        print(f"\n📊 New data found:")
+        print(f"   Records: {len(df_new)}")
+        print(f"   Period: {df_new['time_index'].min().strftime('%Y-%m-%d')} to {df_new['time_index'].max().strftime('%Y-%m-%d')}")
         
-        # 7. Actualizar base de datos
-        print("\n🔄 Actualizando base de datos...")
+        # 7. Update database
+        print("\n🔄 Updating database...")
         engine = get_engine()
         
         with engine.connect() as conn:
-            # Actualizar dimensiones
-            actualizar_dimensiones(df_nuevo, conn)
+            # Update dimensions
+            update_dimensions(df_new, conn)
             
-            # Insertar hechos
-            insertados, actualizados = insertar_hechos(df_nuevo, conn)
+            # Insert facts
+            inserted, updated = insert_facts(df_new, conn)
         
         print("\n" + "=" * 80)
-        print("✅ ACTUALIZACIÓN COMPLETADA")
+        print("✅ UPDATE COMPLETED")
         print("=" * 80)
-        print(f"   Registros insertados: {insertados}")
-        print(f"   Registros actualizados: {actualizados}")
-        print(f"   Total procesados: {insertados + actualizados}")
+        print(f"   Records inserted: {inserted}")
+        print(f"   Records updated: {updated}")
+        print(f"   Total processed: {inserted + updated}")
         print("=" * 80)
         
     except Exception as e:
-        print(f"\n❌ Error durante la actualización: {e}")
+        print(f"\n❌ Error during update: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

@@ -2,109 +2,121 @@
 Secure database setup and population script for IPC data
 Uses environment variables for credentials
 """
-
 import pandas as pd
 from sqlalchemy import create_engine, text
 from config import Config
+
 
 def get_engine():
     """Creates and returns a database engine with secure credentials"""
     Config.validate()
     return create_engine(Config.get_db_url())
 
+
 def setup_db():
-    """Crea la estructura de Star Schema si no existe."""
-    query_schema = """
+    """Creates the Star Schema structure if it does not exist."""
+    create_schema_query = """
     CREATE TABLE IF NOT EXISTS dim_region (
         region_id SERIAL PRIMARY KEY,
-        region_nombre VARCHAR(50) UNIQUE
+        region_name VARCHAR(50) UNIQUE
     );
     
-    CREATE TABLE IF NOT EXISTS dim_categoria (
-        categoria_id SERIAL PRIMARY KEY,
-        categoria_nombre VARCHAR(100) UNIQUE,
-        clasificacion VARCHAR(50)
+    CREATE TABLE IF NOT EXISTS dim_category (
+        category_id SERIAL PRIMARY KEY,
+        category_name VARCHAR(100),
+        classification VARCHAR(50),
+        UNIQUE(category_name, classification)
     );
     
-    CREATE TABLE IF NOT EXISTS fact_inflacion (
-        fecha DATE,
+    CREATE TABLE IF NOT EXISTS fact_inflation (
+        date DATE,
         region_id INT REFERENCES dim_region(region_id),
-        categoria_id INT REFERENCES dim_categoria(categoria_id),
-        valor_indice DECIMAL(18, 4),
-        PRIMARY KEY (fecha, region_id, categoria_id)
+        category_id INT REFERENCES dim_category(category_id),
+        index_value DECIMAL(18, 4),
+        PRIMARY KEY (date, region_id, category_id)
     );
     
-    -- Índices para mejorar el rendimiento de consultas
-    CREATE INDEX IF NOT EXISTS idx_fact_fecha ON fact_inflacion(fecha);
-    CREATE INDEX IF NOT EXISTS idx_fact_region ON fact_inflacion(region_id);
-    CREATE INDEX IF NOT EXISTS idx_fact_categoria ON fact_inflacion(categoria_id);
+    -- Indexes to improve query performance
+    CREATE INDEX IF NOT EXISTS idx_fact_date ON fact_inflation(date);
+    CREATE INDEX IF NOT EXISTS idx_fact_region ON fact_inflation(region_id);
+    CREATE INDEX IF NOT EXISTS idx_fact_category ON fact_inflation(category_id);
     """
     
     engine = get_engine()
     with engine.connect() as conn:
-        conn.execute(text(query_schema))
+        conn.execute(text(create_schema_query))
         conn.commit()
     
-    print("✅ Estructura de base de datos verificada/creada en Supabase.")
+    print("✅ Database structure verified/created in Supabase.")
 
-def poblar_desde_csv(file_path):
-    """Lee el CSV y lo inserta en el modelo relacional."""
-    # Cargar datos
+
+def populate_from_csv(file_path):
+    """Reads the CSV and inserts it into the relational model."""
+    # Load data - The CSV already has headers: time_index, value, region, category, classification
     df = pd.read_csv(file_path)
-    df['indice_tiempo'] = pd.to_datetime(df['indice_tiempo'])
-    
+    df['time_index'] = pd.to_datetime(df['time_index'])
+
     engine = get_engine()
     with engine.connect() as conn:
-        # A. Poblar dim_region
-        regiones = df[['region']].drop_duplicates()
-        for reg in regiones['region']:
+        # A. Populate dim_region
+        regions = df[['region']].drop_duplicates()
+        for reg in regions['region']:
             conn.execute(
-                text("INSERT INTO dim_region (region_nombre) VALUES (:r) ON CONFLICT DO NOTHING"),
+                text("INSERT INTO dim_region (region_name) VALUES (:r) ON CONFLICT DO NOTHING"),
                 {"r": reg}
             )
         
-        # B. Poblar dim_categoria
-        cats = df[['categoria', 'clasificacion']].drop_duplicates()
+        # B. Populate dim_category
+        # Use the column names exactly as they appear in the CSV
+        cats = df[['category', 'classification']].drop_duplicates()
         for _, row in cats.iterrows():
             conn.execute(
-                text("INSERT INTO dim_categoria (categoria_nombre, clasificacion) VALUES (:n, :c) ON CONFLICT DO NOTHING"),
-                {"n": row['categoria'], "c": row['clasificacion']}
+                text("""INSERT INTO dim_category (category_name, classification) 
+                        VALUES (:n, :c) 
+                        ON CONFLICT (category_name, classification) DO NOTHING"""),
+                {"n": row['category'], "c": row['classification']}
             )
         conn.commit()
         
-        # C. Mapeo de IDs (Traemos los IDs generados por el servidor)
+        # C. ID mapping
         res_reg = pd.read_sql("SELECT * FROM dim_region", conn)
-        res_cat = pd.read_sql("SELECT * FROM dim_categoria", conn)
+        res_cat = pd.read_sql("SELECT * FROM dim_category", conn)
         
-        dict_reg = dict(zip(res_reg['region_nombre'], res_reg['region_id']))
-        dict_cat = dict(zip(res_cat['categoria_nombre'], res_cat['categoria_id']))
-        
+        dict_reg = dict(zip(res_reg['region_name'], res_reg['region_id']))
+
+        dict_cat = {}
+        for _, row in res_cat.iterrows():
+            # Map using the SQL column names
+            key = (row['category_name'], row['classification'])
+            dict_cat[key] = row['category_id']
+
         df['region_id'] = df['region'].map(dict_reg)
-        df['categoria_id'] = df['categoria'].map(dict_cat)
+        df['category_id'] = df.apply(lambda x: dict_cat.get((x['category'], x['classification'])), axis=1)
         
-        # D. Carga de fact_inflacion con UPSERT
-        print("Subiendo datos a la tabla de hechos (esto puede tardar unos segundos)...")
+        # D. Load fact_inflation
+        print("Uploading data to the fact table...")
         for _, row in df.iterrows():
-            query_insert = """
-            INSERT INTO fact_inflacion (fecha, region_id, categoria_id, valor_indice)
-            VALUES (:f, :r_id, :c_id, :v)
-            ON CONFLICT (fecha, region_id, categoria_id) 
-            DO UPDATE SET valor_indice = EXCLUDED.valor_indice
+            insert_query = """
+            INSERT INTO fact_inflation (date, region_id, category_id, index_value)
+            VALUES (:d, :r_id, :c_id, :v)
+            ON CONFLICT (date, region_id, category_id) 
+            DO UPDATE SET index_value = EXCLUDED.index_value
             """
-            conn.execute(text(query_insert), {
-                "f": row['indice_tiempo'],
+            conn.execute(text(insert_query), {
+                "d": row['time_index'],
                 "r_id": row['region_id'],
-                "c_id": row['categoria_id'],
-                "v": row['valor']
+                "c_id": row['category_id'],
+                "v": row['value']
             })
         conn.commit()
     
-    print(f"✅ ¡Proceso completado! Datos de {file_path} sincronizados.")
+    print(f"✅ Process completed! Data from {file_path} synchronized.")
 
-# Ejecución
+
+# Execution
 if __name__ == "__main__":
     try:
         setup_db()
-        poblar_desde_csv("ipc_indec_datos.csv")
+        populate_from_csv("ipc_indec_datos.csv")
     except Exception as e:
-        print(f"❌ Error en el proceso: {e}")
+        print(f"❌ Error during process: {e}")

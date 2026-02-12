@@ -1,6 +1,6 @@
 """
-Script CORREGIDO para descargar datos del IPC desde datos.gob.ar
-Con URLs VERIFICADAS y funcionales
+Script to download IPC (Consumer Price Index) data from datos.gob.ar
+With verified and functional URLs
 """
 
 import pandas as pd
@@ -11,273 +11,274 @@ import sys
 
 START_DATE = "2023-12-01"
 
-# URLs VERIFICADAS y FUNCIONALES desde infra.datos.gob.ar
-URLS_DESCARGA = {
-    # Dataset 145 - Nivel General y Categorías
-    'nivel_general_categorias': {
+# Verified and functional download URLs from infra.datos.gob.ar
+DOWNLOAD_URLS = {
+    # Dataset 145 - General Level and Categories
+    'general_level_categories': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.12/download/ipc-incidencia-categorias-nivel-general.csv',
-        'descripcion': 'IPC Nivel General y Categorías (Núcleo, Regulados, Estacionales) por Región'
+        'description': 'IPC Nivel General y Categorías (Núcleo, Regulados, Estacionales) por Región'
     },
     
-    # Dataset 145 - Divisiones (Capítulos) por Región
-    'divisiones_region': {
+    # Dataset 145 - Divisions (Chapters) by Region
+    'divisions_by_region': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.10/download/ipc-incidencia-absoluta-mensual-region-capitulo.csv',
-        'descripcion': 'IPC Divisiones (12 capítulos) por Región'
+        'description': 'IPC Divisiones (12 capítulos) por Región'
     },
     
-    # Dataset 145 - Bienes y Servicios por Región  
-    'bienes_servicios': {
+    # Dataset 145 - Goods and Services by Region
+    'goods_services': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.11/download/ipc-incidencia-mensual-bienes-servicios.csv',
-        'descripcion': 'IPC Bienes y Servicios por Región'
+        'description': 'IPC Bienes y Servicios por Región'
     }
 }
 
 
-def descargar_y_procesar_csv(nombre, config, fecha_inicio):
+def download_and_process_csv(name, config, start_date):
     """
-    Descarga y procesa un CSV al formato requerido
+    Downloads and processes a CSV into the required format
     """
     print(f"\n{'='*70}")
-    print(f"Descargando: {nombre}")
-    print(f"Descripción: {config['descripcion']}")
+    print(f"Downloading: {name}")
+    print(f"Description: {config['description']}")
     print(f"URL: {config['url']}")
     print('='*70)
     
     try:
-        # Descargar
+        # Download
         response = requests.get(config['url'], timeout=60)
         response.raise_for_status()
         
-        # Leer CSV
+        # Read CSV
         df = pd.read_csv(StringIO(response.text))
-        print(f"✓ Descargado: {len(df)} filas, {len(df.columns)} columnas")
+        print(f"✓ Downloaded: {len(df)} rows, {len(df.columns)} columns")
         
-        # Convertir fecha
-        fecha_col = df.columns[0]
-        df[fecha_col] = pd.to_datetime(df[fecha_col])
+        # Convert date
+        date_col = df.columns[0]
+        df[date_col] = pd.to_datetime(df[date_col])
         
-        # Filtrar por fecha
-        df_filtrado = df[df[fecha_col] >= fecha_inicio].copy()
-        print(f"✓ Filtrado desde {fecha_inicio}: {len(df_filtrado)} filas")
+        # Filter by date
+        df_filtered = df[df[date_col] >= start_date].copy()
+        print(f"✓ Filtered from {start_date}: {len(df_filtered)} rows")
         
-        # Convertir a formato largo
+        # Convert to long format
         df_long = pd.melt(
-            df_filtrado,
-            id_vars=[fecha_col],
-            var_name='serie_original',
-            value_name='valor'
+            df_filtered,
+            id_vars=[date_col],
+            var_name='original_series',
+            value_name='value'
         )
         
-        df_long = df_long.rename(columns={fecha_col: 'indice_tiempo'})
+        df_long = df_long.rename(columns={date_col: 'time_index'})
         
-        # Extraer región, categoría y clasificación del nombre de la columna
-        df_long[['region', 'categoria', 'clasificacion']] = df_long['serie_original'].apply(
-            lambda x: pd.Series(extraer_metadata(x, nombre))
+        # Extract region, category and classification from column name
+        df_long[['region', 'category', 'classification']] = df_long['original_series'].apply(
+            lambda x: pd.Series(extract_metadata(x, name))
         )
         
-        # Eliminar columna temporal
-        df_long = df_long.drop('serie_original', axis=1)
+        # Drop temporary column
+        df_long = df_long.drop('original_series', axis=1)
         
-        # Eliminar valores nulos
-        df_long = df_long.dropna(subset=['valor'])
+        # Drop null values
+        df_long = df_long.dropna(subset=['value'])
         
-        print(f"✓ Convertido a formato largo: {len(df_long)} registros")
-        print(f"  - Regiones únicas: {df_long['region'].nunique()}")
-        print(f"  - Clasificaciones únicas: {df_long['clasificacion'].nunique()}")
+        print(f"✓ Converted to long format: {len(df_long)} records")
+        print(f"  - Unique regions: {df_long['region'].nunique()}")
+        print(f"  - Unique classifications: {df_long['classification'].nunique()}")
         
         return df_long
         
     except requests.exceptions.RequestException as e:
-        print(f"✗ Error de descarga: {e}")
+        print(f"✗ Download error: {e}")
         return None
     except Exception as e:
-        print(f"✗ Error de procesamiento: {e}")
+        print(f"✗ Processing error: {e}")
         import traceback
         traceback.print_exc()
         return None
 
 
-def extraer_metadata(nombre_serie, tipo_dataset):
+def extract_metadata(series_name, dataset_type):
     """
-    Extrae región, categoría y clasificación del nombre de la serie
+    Extracts region, category and classification from the series name.
+    Search strings are kept in Spanish to match source data.
+    Returned values are also kept in Spanish for data consistency.
     """
-    nombre = str(nombre_serie).lower().replace('_', ' ')
+    name = str(series_name).lower().replace('_', ' ')
     
-    # Detectar región
+    # Detect region
     region = "Nacional"
-    if 'gba' in nombre:
+    if 'gba' in name:
         region = "GBA"
-    elif 'pampeana' in nombre:
+    elif 'pampeana' in name:
         region = "Pampeana"
-    elif 'noa' in nombre or 'noroeste' in nombre:
+    elif 'noa' in name or 'noroeste' in name:
         region = "NOA"
-    elif 'nea' in nombre or 'noreste' in nombre:
+    elif 'nea' in name or 'noreste' in name:
         region = "NEA"
-    elif 'cuyo' in nombre:
+    elif 'cuyo' in name:
         region = "Cuyo"
-    elif 'patagonia' in nombre:
+    elif 'patagonia' in name:
         region = "Patagonia"
     
-    # Determinar categoría y clasificación según tipo de dataset
-    if tipo_dataset == 'nivel_general_categorias':
-        categoria = "Análisis"
+    # Determine category and classification based on dataset type
+    if dataset_type == 'general_level_categories':
+        category = "Análisis"
         
-        if 'nivel general' in nombre:
-            categoria = "Nivel General"
-            clasificacion = "Total"
-        elif 'nucleo' in nombre or 'núcleo' in nombre:
-            clasificacion = "Núcleo"
-        elif 'regulado' in nombre:
-            clasificacion = "Regulados"
-        elif 'estacional' in nombre:
-            clasificacion = "Estacionales"
+        if 'nivel general' in name:
+            category = "Nivel General"
+            classification = "Total"
+        elif 'nucleo' in name or 'núcleo' in name:
+            classification = "Núcleo"
+        elif 'regulado' in name:
+            classification = "Regulados"
+        elif 'estacional' in name:
+            classification = "Estacionales"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
-    elif tipo_dataset == 'divisiones_region':
-        categoria = "División"
+    elif dataset_type == 'divisions_by_region':
+        category = "División"
         
-        # Mapeo de divisiones
-        if 'alimentos bebidas no alcoholica' in nombre:
-            clasificacion = "Alimentos y bebidas"
-        elif 'bebidas alcoholica' in nombre or 'tabaco' in nombre:
-            clasificacion = "Bebidas alcohólicas y tabaco"
-        elif 'prenda' in nombre or 'vestir' in nombre or 'calzado' in nombre:
-            clasificacion = "Prendas de vestir y calzado"
-        elif 'vivienda' in nombre or 'agua' in nombre or 'electricidad' in nombre or 'combustible' in nombre:
-            clasificacion = "Vivienda y servicios básicos"
-        elif 'equipamiento' in nombre or 'mantenimiento' in nombre:
-            clasificacion = "Equipamiento del hogar"
-        elif 'salud' in nombre:
-            clasificacion = "Salud"
-        elif 'transporte' in nombre:
-            clasificacion = "Transporte"
-        elif 'comunicacion' in nombre:
-            clasificacion = "Comunicación"
-        elif 'recreacion' in nombre or 'cultura' in nombre:
-            clasificacion = "Recreación y cultura"
-        elif 'educacion' in nombre:
-            clasificacion = "Educación"
-        elif 'restaurante' in nombre or 'hotel' in nombre:
-            clasificacion = "Restaurantes y hoteles"
-        elif 'otros' in nombre or 'bienes servicios' in nombre:
-            clasificacion = "Bienes y servicios varios"
+        if 'alimentos bebidas no alcoholica' in name:
+            classification = "Alimentos y bebidas"
+        elif 'bebidas alcoholica' in name or 'tabaco' in name:
+            classification = "Bebidas alcohólicas y tabaco"
+        elif 'prenda' in name or 'vestir' in name or 'calzado' in name:
+            classification = "Prendas de vestir y calzado"
+        elif 'vivienda' in name or 'agua' in name or 'electricidad' in name or 'combustible' in name:
+            classification = "Vivienda y servicios básicos"
+        elif 'equipamiento' in name or 'mantenimiento' in name:
+            classification = "Equipamiento del hogar"
+        elif 'salud' in name:
+            classification = "Salud"
+        elif 'transporte' in name:
+            classification = "Transporte"
+        elif 'comunicacion' in name:
+            classification = "Comunicación"
+        elif 'recreacion' in name or 'cultura' in name:
+            classification = "Recreación y cultura"
+        elif 'educacion' in name:
+            classification = "Educación"
+        elif 'restaurante' in name or 'hotel' in name:
+            classification = "Restaurantes y hoteles"
+        elif 'otros' in name or 'bienes servicios' in name:
+            classification = "Bienes y servicios varios"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
-    elif tipo_dataset == 'bienes_servicios':
-        categoria = "Naturaleza"
+    elif dataset_type == 'goods_services':
+        category = "Naturaleza"
         
-        if 'bien' in nombre and 'servicio' not in nombre:
-            clasificacion = "Bienes"
-        elif 'servicio' in nombre:
-            clasificacion = "Servicios"
+        if 'bien' in name and 'servicio' not in name:
+            classification = "Bienes"
+        elif 'servicio' in name:
+            classification = "Servicios"
         else:
-            clasificacion = nombre.replace(region.lower(), '').strip()
+            classification = name.replace(region.lower(), '').strip()
     
     else:
-        categoria = "Otros"
-        clasificacion = nombre
+        category = "Otros"
+        classification = name
     
-    return region, categoria, clasificacion
+    return region, category, classification
 
 
 def main():
-    """Función principal"""
+    """Main function"""
     print("=" * 80)
-    print("DESCARGA DE DATOS DEL IPC - INDEC (datos.gob.ar)")
-    print("Script CORREGIDO con URLs verificadas")
+    print("IPC DATA DOWNLOAD - INDEC (datos.gob.ar)")
+    print("Script with verified URLs")
     print("=" * 80)
-    print(f"Fecha de inicio: {START_DATE}")
-    print(f"Datasets a descargar: {len(URLS_DESCARGA)}")
+    print(f"Start date: {START_DATE}")
+    print(f"Datasets to download: {len(DOWNLOAD_URLS)}")
     print("=" * 80)
     
-    # Lista para almacenar DataFrames
+    # List to store DataFrames
     dataframes = []
     
-    # Descargar cada dataset
-    for nombre, config in URLS_DESCARGA.items():
-        df = descargar_y_procesar_csv(nombre, config, START_DATE)
+    # Download each dataset
+    for name, config in DOWNLOAD_URLS.items():
+        df = download_and_process_csv(name, config, START_DATE)
         if df is not None:
             dataframes.append(df)
     
-    # Verificar que se descargaron datos
+    # Check that data was downloaded
     if not dataframes:
         print("\n" + "=" * 80)
-        print("⚠️  ERROR: No se pudieron descargar datos")
+        print("⚠️  ERROR: Could not download data")
         print("=" * 80)
-        print("\nPosibles causas:")
-        print("1. Problemas de conexión a internet")
-        print("2. Los servidores de datos.gob.ar están caídos")
-        print("3. Las URLs han cambiado")
-        print("\nRecomendación:")
-        print("- Verifica tu conexión")
-        print("- Intenta nuevamente en unos minutos")
-        print("- Visita: https://datos.gob.ar/")
+        print("\nPossible causes:")
+        print("1. Internet connection issues")
+        print("2. datos.gob.ar servers are down")
+        print("3. URLs have changed")
+        print("\nRecommendation:")
+        print("- Check your connection")
+        print("- Try again in a few minutes")
+        print("- Visit: https://datos.gob.ar/")
         sys.exit(1)
     
-    # Consolidar todos los DataFrames
+    # Consolidate all DataFrames
     print("\n" + "=" * 80)
-    print("CONSOLIDANDO DATOS...")
+    print("CONSOLIDATING DATA...")
     print("=" * 80)
     
     df_final = pd.concat(dataframes, ignore_index=True)
     
-    # Limpiar datos
-    df_final = df_final.dropna(subset=['valor'])
-    df_final = df_final.sort_values(['indice_tiempo', 'region', 'categoria', 'clasificacion'])
+    # Clean data
+    df_final = df_final.dropna(subset=['value'])
+    df_final = df_final.sort_values(['time_index', 'region', 'category', 'classification'])
     df_final = df_final.reset_index(drop=True)
     
-    # Formatear fecha
-    df_final['indice_tiempo'] = pd.to_datetime(df_final['indice_tiempo']).dt.strftime('%Y-%m-%d')
+    # Format date
+    df_final['time_index'] = pd.to_datetime(df_final['time_index']).dt.strftime('%Y-%m-%d')
     
-    # Resumen
-    print(f"\n✓ DATOS CONSOLIDADOS:")
-    print(f"  {'Total de registros:':<30} {len(df_final):>10,}")
-    print(f"  {'Período:':<30} {df_final['indice_tiempo'].min()} a {df_final['indice_tiempo'].max()}")
-    print(f"  {'Regiones únicas:':<30} {df_final['region'].nunique():>10}")
-    print(f"  {'Categorías únicas:':<30} {df_final['categoria'].nunique():>10}")
-    print(f"  {'Clasificaciones únicas:':<30} {df_final['clasificacion'].nunique():>10}")
+    # Summary
+    print(f"\n✓ CONSOLIDATED DATA:")
+    print(f"  {'Total records:':<30} {len(df_final):>10,}")
+    print(f"  {'Period:':<30} {df_final['time_index'].min()} to {df_final['time_index'].max()}")
+    print(f"  {'Unique regions:':<30} {df_final['region'].nunique():>10}")
+    print(f"  {'Unique categories:':<30} {df_final['category'].nunique():>10}")
+    print(f"  {'Unique classifications:':<30} {df_final['classification'].nunique():>10}")
     
-    # Distribución por región
+    # Distribution by region
     print("\n" + "=" * 80)
-    print("DISTRIBUCIÓN POR REGIÓN:")
+    print("DISTRIBUTION BY REGION:")
     print("=" * 80)
     region_counts = df_final.groupby('region').size().sort_values(ascending=False)
     for region, count in region_counts.items():
-        print(f"  {region:<20} {count:>10,} registros")
+        print(f"  {region:<20} {count:>10,} records")
     
-    # Distribución por categoría
+    # Distribution by category
     print("\n" + "=" * 80)
-    print("DISTRIBUCIÓN POR CATEGORÍA:")
+    print("DISTRIBUTION BY CATEGORY:")
     print("=" * 80)
-    cat_counts = df_final.groupby('categoria').size().sort_values(ascending=False)
+    cat_counts = df_final.groupby('category').size().sort_values(ascending=False)
     for cat, count in cat_counts.items():
-        print(f"  {cat:<20} {count:>10,} registros")
+        print(f"  {cat:<20} {count:>10,} records")
     
-    # Guardar archivo
+    # Save file
     output_file = 'ipc_indec_datos.csv'
     df_final.to_csv(output_file, index=False, encoding='utf-8-sig')
     
     print("\n" + "=" * 80)
-    print(f"✓ ARCHIVO GUARDADO: {output_file}")
+    print(f"✓ FILE SAVED: {output_file}")
     print("=" * 80)
     
-    # Muestra de datos
-    print("\nMUESTRA DE DATOS (primeras 20 filas):")
+    # Data sample
+    print("\nDATA SAMPLE (first 20 rows):")
     print("=" * 80)
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 120)
     print(df_final.head(20).to_string(index=False))
     
     print("\n" + "=" * 80)
-    print("✓ DESCARGA COMPLETADA EXITOSAMENTE")
+    print("✓ DOWNLOAD COMPLETED SUCCESSFULLY")
     print("=" * 80)
-    print(f"\nFormato del CSV:")
-    print(f"  - Columnas: indice_tiempo, valor, region, categoria, clasificacion")
-    print(f"  - Formato: LARGO (unpivoted)")
+    print(f"\nCSV format:")
+    print(f"  - Columns: time_index, value, region, category, classification")
+    print(f"  - Format: LONG (unpivoted)")
     print(f"  - Encoding: UTF-8 with BOM")
-    print(f"\n¡Los datos están listos para análisis!")
+    print(f"\nData is ready for analysis!")
 
 
 if __name__ == "__main__":

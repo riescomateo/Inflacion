@@ -1,4 +1,4 @@
-﻿indice_tiempo,valor,region,categoria,clasificacion
+﻿time_index,value,region,category,classification
 2023-12-01,0.0194,Cuyo,Análisis,Estacionales
 2023-12-01,0.2218,Cuyo,Análisis,Estacionales
 2023-12-01,0.2025,Cuyo,Análisis,Núcleo
@@ -4607,6 +4607,12 @@
 2025-11-01,0.0585,Patagonia,División,Vivienda y servicios básicos
 2025-11-01,0.023,Patagonia,Nivel General,Total
 2025-11-01,0.296,Patagonia,Nivel General,Total
+2025-12-01,-0.0006,Cuyo,Análisis,Estacionales
+2025-12-01,0.0178,Cuyo,Análisis,Estacionales
+2025-12-01,0.0236,Cuyo,Análisis,Núcleo
+2025-12-01,0.2281,Cuyo,Análisis,Núcleo
+2025-12-01,0.0065,Cuyo,Análisis,Regulados
+2025-12-01,0.0708,Cuyo,Análisis,Regulados
 2025-12-01,0.01,Cuyo,División,Alimentos y bebidas
 2025-12-01,0.1015,Cuyo,División,Alimentos y bebidas
 2025-12-01,0.0007,Cuyo,División,Bebidas alcohólicas y tabaco
@@ -4631,6 +4637,14 @@
 2025-12-01,0.0412999999999999,Cuyo,División,Transporte
 2025-12-01,0.0026,Cuyo,División,Vivienda y servicios básicos
 2025-12-01,0.0403,Cuyo,División,Vivienda y servicios básicos
+2025-12-01,0.03,Cuyo,Nivel General,Total
+2025-12-01,0.317,Cuyo,Nivel General,Total
+2025-12-01,0.0007,GBA,Análisis,Estacionales
+2025-12-01,0.0185,GBA,Análisis,Estacionales
+2025-12-01,0.0204,GBA,Análisis,Núcleo
+2025-12-01,0.2269,GBA,Análisis,Núcleo
+2025-12-01,0.0068,GBA,Análisis,Regulados
+2025-12-01,0.072,GBA,Análisis,Regulados
 2025-12-01,0.0066,GBA,División,Alimentos y bebidas
 2025-12-01,0.0817,GBA,División,Alimentos y bebidas
 2025-12-01,0.0007,GBA,División,Bebidas alcohólicas y tabaco
@@ -4655,6 +4669,14 @@
 2025-12-01,0.0385,GBA,División,Transporte
 2025-12-01,0.0038,GBA,División,Vivienda y servicios básicos
 2025-12-01,0.0366,GBA,División,Vivienda y servicios básicos
+2025-12-01,0.028,GBA,Nivel General,Total
+2025-12-01,0.317,GBA,Nivel General,Total
+2025-12-01,-0.0001,NEA,Análisis,Estacionales
+2025-12-01,0.0128,NEA,Análisis,Estacionales
+2025-12-01,0.0267,NEA,Análisis,Núcleo
+2025-12-01,0.2149,NEA,Análisis,Núcleo
+2025-12-01,0.0072,NEA,Análisis,Regulados
+2025-12-01,0.0607,NEA,Análisis,Regulados
 2025-12-01,0.0173,NEA,División,Alimentos y bebidas
 2025-12-01,0.1161,NEA,División,Alimentos y bebidas
 2025-12-01,0.0006,NEA,División,Bebidas alcohólicas y tabaco
@@ -4679,6 +4701,14 @@
 2025-12-01,0.0323,NEA,División,Transporte
 2025-12-01,0.0038,NEA,División,Vivienda y servicios básicos
 2025-12-01,0.0355,NEA,División,Vivienda y servicios básicos
+2025-12-01,0.034,NEA,Nivel General,Total
+2025-12-01,0.288,NEA,Nivel General,Total
+2025-12-01,0.0008,NOA,Análisis,Estacionales
+2025-12-01,0.0212,NOA,Análisis,Estacionales
+2025-12-01,0.0191,NOA,Análisis,Núcleo
+2025-12-01,0.2236,NOA,Análisis,Núcleo
+2025-12-01,0.0062,NOA,Análisis,Regulados
+2025-12-01,0.0694,NOA,Análisis,Regulados
 2025-12-01,0.0124,NOA,División,Alimentos y bebidas
 2025-12-01,0.1168,NOA,División,Alimentos y bebidas
 2025-12-01,0.0006,NOA,División,Bebidas alcohólicas y tabaco
@@ -4703,6 +4733,14 @@
 2025-12-01,0.0279,NOA,División,Transporte
 2025-12-01,0.0023,NOA,División,Vivienda y servicios básicos
 2025-12-01,0.0334,NOA,División,Vivienda y servicios básicos
+2025-12-01,0.026,NOA,Nivel General,Total
+2025-12-01,0.314,NOA,Nivel General,Total
+2025-12-01,0.0007,Pampeana,Análisis,Estacionales
+2025-12-01,0.018,Pampeana,Análisis,Estacionales
+2025-12-01,0.0218,Pampeana,Análisis,Núcleo
+2025-12-01,0.2333,Pampeana,Análisis,Núcleo
+2025-12-01,0.0066,Pampeana,Análisis,Regulados
+2025-12-01,0.0636,Pampeana,Análisis,Regulados
 2025-12-01,0.0106,Pampeana,División,Alimentos y bebidas
 2025-12-01,0.0960999999999999,Pampeana,División,Alimentos y bebidas
 2025-12-01,0.0008,Pampeana,División,Bebidas alcohólicas y tabaco
@@ -4727,6 +4765,14 @@
 2025-12-01,0.0348,Pampeana,División,Transporte
 2025-12-01,0.0029,Pampeana,División,Vivienda y servicios básicos
 2025-12-01,0.0368,Pampeana,División,Vivienda y servicios básicos
+2025-12-01,0.029,Pampeana,Nivel General,Total
+2025-12-01,0.315,Pampeana,Nivel General,Total
+2025-12-01,0.0,Patagonia,Análisis,Estacionales
+2025-12-01,0.0192,Patagonia,Análisis,Estacionales
+2025-12-01,0.0177,Patagonia,Análisis,Núcleo
+2025-12-01,0.2195,Patagonia,Análisis,Núcleo
+2025-12-01,0.008,Patagonia,Análisis,Regulados
+2025-12-01,0.0907,Patagonia,Análisis,Regulados
 2025-12-01,0.0084,Patagonia,División,Alimentos y bebidas
 2025-12-01,0.0828,Patagonia,División,Alimentos y bebidas
 2025-12-01,0.0006,Patagonia,División,Bebidas alcohólicas y tabaco
@@ -4751,3 +4797,5 @@
 2025-12-01,0.0556,Patagonia,División,Transporte
 2025-12-01,0.0036,Patagonia,División,Vivienda y servicios básicos
 2025-12-01,0.0632,Patagonia,División,Vivienda y servicios básicos
+2025-12-01,0.026,Patagonia,Nivel General,Total
+2025-12-01,0.329,Patagonia,Nivel General,Total
