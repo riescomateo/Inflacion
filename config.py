@@ -7,48 +7,66 @@ import os
 from dotenv import load_dotenv
 import urllib.parse
 
-# Load environment variables from .env file
+# Load environment variables from .env file for local development
 load_dotenv()
 
 class Config:
-    """Database and application configuration"""
+    """
+    Database and application configuration management.
+    Prioritizes system environment variables (useful for GitHub Actions) 
+    over local .env files.
+    """
     
-    # Database credentials
-    DB_USER = os.getenv('DB_USER')
-    DB_PASSWORD = os.getenv('DB_PASSWORD')
-    DB_HOST = os.getenv('DB_HOST')
-    DB_PORT = os.getenv('DB_PORT', '6543')
-    DB_NAME = os.getenv('DB_NAME', 'postgres')
+    # Database credentials fetched from environment variables
+    DB_USER = os.environ.get('DB_USER')
+    DB_PASSWORD = os.environ.get('DB_PASSWORD')
+    DB_HOST = os.environ.get('DB_HOST')
+    DB_PORT = os.environ.get('DB_PORT', '6543')
+    DB_NAME = os.environ.get('DB_NAME', 'postgres')
     
-    # Data configuration
-    START_DATE = os.getenv('START_DATE', '2023-12-01')
+    # Default start date for initial data extraction
+    START_DATE = os.environ.get('START_DATE', '2023-12-01')
     
     @classmethod
     def get_db_url(cls):
         """
-        Constructs the database URL with properly encoded password
+        Constructs the SQLAlchemy database connection string.
+        Handles special characters in passwords using URL encoding.
         """
-        if not all([cls.DB_USER, cls.DB_PASSWORD, cls.DB_HOST]):
+        # Re-check variables to ensure they are captured during runtime
+        user = cls.DB_USER or os.environ.get('DB_USER')
+        password = cls.DB_PASSWORD or os.environ.get('DB_PASSWORD')
+        host = cls.DB_HOST or os.environ.get('DB_HOST')
+        
+        if not all([user, password, host]):
             raise ValueError(
-                "Missing required environment variables. "
-                "Please ensure DB_USER, DB_PASSWORD, and DB_HOST are set in .env file"
+                "Connection Error: DB_USER, DB_PASSWORD, or DB_HOST are not defined. "
+                "Verify GitHub Secrets or your local .env file."
             )
         
-        safe_password = urllib.parse.quote_plus(cls.DB_PASSWORD)
-        return f"postgresql+psycopg2://{cls.DB_USER}:{safe_password}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
+        # URL-encode password to handle special characters (like '@' or ':')
+        safe_password = urllib.parse.quote_plus(password)
+        
+        return f"postgresql+psycopg2://{user}:{safe_password}@{host}:{cls.DB_PORT}/{cls.DB_NAME}"
     
     @classmethod
     def validate(cls):
         """
-        Validates that all required configuration is present
+        Validates that all strictly required configuration variables are present.
+        Returns True if valid, raises ValueError otherwise.
         """
-        required_vars = ['DB_USER', 'DB_PASSWORD', 'DB_HOST']
-        missing = [var for var in required_vars if not getattr(cls, var)]
+        required_vars = {
+            'DB_USER': cls.DB_USER or os.environ.get('DB_USER'),
+            'DB_PASSWORD': cls.DB_PASSWORD or os.environ.get('DB_PASSWORD'),
+            'DB_HOST': cls.DB_HOST or os.environ.get('DB_HOST')
+        }
+        
+        missing = [var for var, value in required_vars.items() if not value]
         
         if missing:
             raise ValueError(
                 f"Missing required environment variables: {', '.join(missing)}\n"
-                "Please create a .env file based on .env.example"
+                "Action required: Set these variables in GitHub Secrets or a local .env file."
             )
         
         return True
