@@ -12,7 +12,9 @@ Centralize Argentina's historical inflation data into a relational database opti
 
 ## 🏗️ System Architecture
 
-![Pipeline Architecture](./docs/architecture.png)
+<p align="center">
+  <img src="./docs/architecture.png" width="750" alt="Pipeline Architecture"/>
+</p>
 
 **Data flow:**
 1. **Extract:** Automated download from public API (3 CSV endpoints)
