@@ -13,7 +13,7 @@ Centralize Argentina's historical inflation data into a relational database opti
 ## 🏗️ System Architecture
 
 <p align="center">
-  <img src="./docs/architecture.png" width="750" alt="Pipeline Architecture"/>
+  <img src="./docs/architecture.png" width="500" alt="Pipeline Architecture"/>
 </p>
 
 **Data flow:**
