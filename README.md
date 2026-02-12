@@ -1,226 +1,133 @@
 # 📊 IPC Argentina - Automated Data Pipeline
 
-> **ETL pipeline automatizado para análisis de inflación argentina con modelo dimensional en PostgreSQL**
+> **End-to-end ETL pipeline for Argentine inflation analysis with a dimensional model in PostgreSQL**
 
-Pipeline end-to-end que extrae datos del Índice de Precios al Consumidor (IPC) desde la API pública de datos.gob.ar, los transforma a un modelo Star Schema y los carga en PostgreSQL con actualizaciones incrementales mensuales.
+This project extracts Consumer Price Index (CPI) data from Argentina's public API (datos.gob.ar), transforms it into a Star Schema model, and loads it into PostgreSQL with automated monthly incremental updates.
 
-## 🎯 Objetivo
+## 🎯 Objective
 
-Centralizar datos históricos de inflación argentina en una base de datos relacional optimizada para análisis multidimensional, permitiendo calcular métricas clave (MoM, YoY, incidencias) y generar insights sobre tendencias económicas por región y categoría.
-
----
-
-## 🏗️ Arquitectura del Sistema
-
-```mermaid
-graph LR
-    A[datos.gob.ar API<br/>INDEC] -->|HTTP GET<br/>CSV| B[Python ETL<br/>Pandas + Requests]
-    B -->|SQLAlchemy<br/>UPSERT| C[PostgreSQL<br/>Supabase]
-    C -->|SQL Queries| D[Power BI<br/>Tableau<br/>Streamlit]
-    
-    style A fill:#e1f5ff
-    style B fill:#fff4e1
-    style C fill:#e8f5e9
-    style D fill:#f3e5f5
-```
-
-**Flujo de datos:**
-1. **Extracción:** Descarga automática desde API pública (3 endpoints CSV)
-2. **Transformación:** Normalización Wide→Long + Parsing de metadata
-3. **Carga:** Modelo Star Schema con updates incrementales
-4. **Visualización:** Dashboards conectados vía SQL queries
+Centralize Argentina's historical inflation data into a relational database optimized for multidimensional analysis, enabling calculation of key metrics (MoM, YoY, category incidence) and generating economic insights by region and category.
 
 ---
 
-## ⚙️ Highlights del Pipeline ETL
+## 🏗️ System Architecture
 
-### **Extracción**
-- Consumo de API REST pública (datos.gob.ar) con manejo de errores y timeouts
-- Validación de estructura de datos antes de procesamiento
-- Detección automática de nuevos períodos disponibles
+![Pipeline Architecture](./docs/architecture.png)
 
-### **Transformación**
-- **Unpivot:** Conversión de formato Wide a Long usando `pandas.melt()`
-- **Parsing:** Extracción de metadata (región, categoría) desde nombres de columnas
-- **Limpieza:** Eliminación de nulls, normalización de fechas, validación de tipos
-
-### **Carga**
-- **Lógica incremental:** `ON CONFLICT ... DO UPDATE` para prevenir duplicados
-- **Modelo dimensional:** Star Schema con tablas fact/dimension optimizadas
-- **Índices:** Optimización de queries temporales (`idx_fact_fecha`, `idx_fact_region`)
-
-### **Orquestación**
-- Scripts programados (Cron / GitHub Actions) para ejecución mensual automática
-- Logs detallados con métricas de inserción/actualización
-- Manejo de revisiones retroactivas del INDEC (descarga últimos 2 meses)
+**Data flow:**
+1. **Extract:** Automated download from public API (3 CSV endpoints)
+2. **Transform:** Wide→Long normalization + metadata parsing
+3. **Load:** Star Schema with incremental updates via UPSERT
+4. **Visualize:** Dashboards connected via SQL queries
 
 ---
 
-## 📐 Modelo de Datos - Star Schema
+## ⚙️ ETL Pipeline Highlights
+
+### **Extract**
+- Consumption of public REST API (datos.gob.ar) with error handling and timeouts
+- Data structure validation before processing
+- Automatic detection of newly available periods
+
+### **Transform**
+- **Unpivot:** Wide to Long format conversion using `pandas.melt()`
+- **Parsing:** Metadata extraction (region, category) from column names
+- **Cleaning:** Null removal, date normalization, type validation
+
+### **Load**
+- **Incremental logic:** `ON CONFLICT ... DO UPDATE` to prevent duplicates
+- **Dimensional model:** Star Schema with optimized fact/dimension tables
+- **Indexes:** Temporal query optimization (`idx_fact_fecha`, `idx_fact_region`)
+
+### **Orchestration**
+- Scheduled scripts (Cron / GitHub Actions) for automatic monthly execution
+- Detailed logs with insert/update metrics
+- Handles INDEC retroactive revisions (downloads last 2 months)
+
+---
+
+## 📐 Data Model - Star Schema
 
 ```sql
--- Tablas de Dimensión
+-- Dimension Tables
 CREATE TABLE dim_region (
-    region_id SERIAL PRIMARY KEY,
-    region_nombre VARCHAR(50) UNIQUE
+    region_id   SERIAL PRIMARY KEY,
+    region_name VARCHAR(50) UNIQUE
 );
 
-CREATE TABLE dim_categoria (
-    categoria_id SERIAL PRIMARY KEY,
-    categoria_nombre VARCHAR(100) UNIQUE,
-    clasificacion VARCHAR(50)
+CREATE TABLE dim_category (
+    category_id   SERIAL PRIMARY KEY,
+    category_name VARCHAR(100) UNIQUE,
+    classification VARCHAR(50)
 );
 
--- Tabla de Hechos
-CREATE TABLE fact_inflacion (
-    fecha DATE,
-    region_id INT REFERENCES dim_region(region_id),
-    categoria_id INT REFERENCES dim_categoria(categoria_id),
-    valor_indice DECIMAL(18, 4),
-    PRIMARY KEY (fecha, region_id, categoria_id)
+-- Fact Table
+CREATE TABLE fact_inflation (
+    date        DATE,
+    region_id   INT REFERENCES dim_region(region_id),
+    category_id INT REFERENCES dim_category(category_id),
+    index_value DECIMAL(18, 4),
+    PRIMARY KEY (date, region_id, category_id)
 );
 
--- Índices
-CREATE INDEX idx_fact_fecha ON fact_inflacion(fecha);
-CREATE INDEX idx_fact_region ON fact_inflacion(region_id);
-CREATE INDEX idx_fact_categoria ON fact_inflacion(categoria_id);
+-- Indexes
+CREATE INDEX idx_fact_date     ON fact_inflation(date);
+CREATE INDEX idx_fact_region   ON fact_inflation(region_id);
+CREATE INDEX idx_fact_category ON fact_inflation(category_id);
 ```
 
-**Granularidad:** Mensual | **Período:** Dic 2023 → Presente | **Registros:** ~30,000+
+**Granularity:** Monthly | **Period:** Dec 2023 → Present | **Records:** ~30,000+
 
 ---
 
-## 🚀 Cómo Correr el Proyecto
+## 📊 SQL Queries - Window Functions
 
-### **Prerequisitos**
-- Python 3.8+
-- PostgreSQL (Supabase recomendado)
-- Git
-
-### **1. Clonar repositorio**
-```bash
-git clone https://github.com/tu-usuario/ipc-argentina-pipeline.git
-cd ipc-argentina-pipeline
-```
-
-### **2. Crear entorno virtual**
-```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
-source venv/bin/activate
-```
-
-### **3. Instalar dependencias**
-```bash
-pip install -r requirements.txt
-```
-
-### **4. Configurar variables de entorno**
-
-Crear archivo `.env` basado en `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Editar `.env` con tus credenciales:
-```env
-DB_USER=postgres.tu_project_id
-DB_PASSWORD=tu_contraseña_segura
-DB_HOST=aws-0-us-west-2.pooler.supabase.com
-DB_PORT=6543
-DB_NAME=postgres
-START_DATE=2023-12-01
-```
-
-### **5. Ejecutar carga inicial**
-
-```bash
-# Paso 1: Descargar datos
-python ipc_scraper.py
-
-# Paso 2: Crear estructura de BD y cargar datos
-python db_setup_secure.py
-```
-
-Salida esperada:
-```
-✅ Estructura de base de datos verificada/creada
-✅ Proceso completado! Datos sincronizados
-   Total registros: 28,450
-   Período: 2023-12-01 a 2025-02-01
-```
-
-### **6. Actualización mensual**
-
-```bash
-python update_monthly.py
-```
-
-Salida esperada:
-```
-📅 Última fecha en DB: 2025-01-01
-📥 Descargando datos desde: 2024-11-01
-📊 Datos nuevos encontrados: 1,250 registros
-✅ ACTUALIZACIÓN COMPLETADA
-   Registros insertados: 1,200
-   Registros actualizados: 50
-```
-
----
-
-## 📊 Consultas SQL - Window Functions
-
-### **Variación Mensual (MoM) - Month over Month**
+### **Month over Month Variation (MoM)**
 
 ```sql
-WITH inflacion_mensual AS (
-    SELECT 
-        f.fecha,
-        f.valor_indice,
-        LAG(f.valor_indice) OVER (ORDER BY f.fecha) as valor_mes_anterior
-    FROM fact_inflacion f
-    JOIN dim_region r ON f.region_id = r.region_id
-    JOIN dim_categoria c ON f.categoria_id = c.categoria_id
-    WHERE r.region_nombre = 'Nacional'
-      AND c.categoria_nombre = 'Nivel General'
-      AND c.clasificacion = 'Total'
+WITH monthly_inflation AS (
+    SELECT
+        f.date,
+        f.index_value,
+        LAG(f.index_value) OVER (ORDER BY f.date) AS prev_month_value
+    FROM fact_inflation f
+    JOIN dim_region   r ON f.region_id   = r.region_id
+    JOIN dim_category c ON f.category_id = c.category_id
+    WHERE r.region_name    = 'Nacional'
+      AND c.category_name  = 'Nivel General'
+      AND c.classification = 'Total'
 )
-SELECT 
-    fecha,
-    valor_indice as indice_actual,
-    ROUND(((valor_indice / valor_mes_anterior - 1) * 100), 2) as variacion_mom_pct
-FROM inflacion_mensual
-WHERE valor_mes_anterior IS NOT NULL
-ORDER BY fecha DESC
+SELECT
+    date,
+    index_value AS current_index,
+    ROUND(((index_value / prev_month_value - 1) * 100), 2) AS mom_variation_pct
+FROM monthly_inflation
+WHERE prev_month_value IS NOT NULL
+ORDER BY date DESC
 LIMIT 12;
 ```
 
-### **Variación Interanual (YoY) - Year over Year**
+### **Year over Year Variation (YoY)**
 
 ```sql
-WITH inflacion_yoy AS (
-    SELECT 
-        f.fecha,
-        f.valor_indice,
-        LAG(f.valor_indice, 12) OVER (ORDER BY f.fecha) as valor_anio_anterior
-    FROM fact_inflacion f
-    JOIN dim_region r ON f.region_id = r.region_id
-    JOIN dim_categoria c ON f.categoria_id = c.categoria_id
-    WHERE r.region_nombre = 'Nacional'
-      AND c.categoria_nombre = 'Nivel General'
+WITH yearly_inflation AS (
+    SELECT
+        f.date,
+        f.index_value,
+        LAG(f.index_value, 12) OVER (ORDER BY f.date) AS prev_year_value
+    FROM fact_inflation f
+    JOIN dim_region   r ON f.region_id   = r.region_id
+    JOIN dim_category c ON f.category_id = c.category_id
+    WHERE r.region_name   = 'Nacional'
+      AND c.category_name = 'Nivel General'
 )
-SELECT 
-    fecha,
-    valor_indice,
-    ROUND(((valor_indice / valor_anio_anterior - 1) * 100), 2) as variacion_yoy_pct
-FROM inflacion_yoy
-WHERE valor_anio_anterior IS NOT NULL
-ORDER BY fecha DESC
+SELECT
+    date,
+    index_value,
+    ROUND(((index_value / prev_year_value - 1) * 100), 2) AS yoy_variation_pct
+FROM yearly_inflation
+WHERE prev_year_value IS NOT NULL
+ORDER BY date DESC
 LIMIT 12;
 ```
 
@@ -228,86 +135,69 @@ LIMIT 12;
 
 ## 📊 Business Intelligence & Analytics
 
-El modelo Star Schema está optimizado para conectarse con herramientas de visualización:
+The Star Schema model is ready to connect with any BI visualization tool.
 
-### **KPIs Disponibles**
+### **Available KPIs**
 
-- **Variación MoM (Month over Month):** Inflación del último mes
-- **Variación YoY (Year over Year):** Comparación interanual
-- **Inflación Acumulada:** Desde inicio del año o período específico
-- **Incidencia por Rubro:** Qué categorías explican más la inflación total
-- **Análisis Core vs No-Core:** Núcleo, Regulados y Estacionales
-- **Disparidad Regional:** Comparación entre GBA, Pampeana, NOA, NEA, Cuyo, Patagonia
+- **MoM (Month over Month):** Last month's inflation rate
+- **YoY (Year over Year):** Year-on-year comparison
+- **Cumulative Inflation:** From the start of the year or any specific period
+- **Category Incidence:** Which categories explain the most of total inflation
+- **Core vs Non-Core Analysis:** Core, Regulated, and Seasonal components
+- **Regional Disparity:** Comparison across GBA, Pampeana, NOA, NEA, Cuyo, Patagonia
 
-### **Herramientas de Visualización**
+### **Visualization Tools**
 
-| Herramienta | Conexión | Casos de Uso |
-|-------------|----------|--------------|
-| **Power BI** | PostgreSQL Connector | Dashboards ejecutivos, reportes automáticos |
-| **Tableau** | Native PostgreSQL | Análisis ad-hoc, storytelling visual |
-| **Streamlit** | SQLAlchemy | Aplicaciones web interactivas |
-| **Python (Pandas)** | psycopg2 / SQLAlchemy | Análisis exploratorio, notebooks |
-
-### **Ejemplo de Dashboard**
-
-```
-┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
-│ Inflación MoM   │  │ Inflación YoY   │  │ Acumulado 2025  │
-│     2.7%        │  │    117.5%       │  │     2.7%        │
-│   ▲ +0.3 pp     │  │   ▼ -7.7 pp     │  │   ▲ +2.7 pp     │
-└─────────────────┘  └─────────────────┘  └─────────────────┘
-
-Top 5 Categorías por Incidencia:
-Alimentos y bebidas      ████████████████████ 1.2pp
-Transporte              ████████ 0.5pp
-Vivienda                ███████ 0.4pp
-Salud                   █████ 0.3pp
-Recreación              ████ 0.2pp
-```
+| Tool | Connection | Use Cases |
+|------|------------|-----------|
+| **Power BI** | PostgreSQL Connector | Executive dashboards, automated reports |
+| **Tableau** | Native PostgreSQL | Ad-hoc analysis, visual storytelling |
+| **Streamlit** | SQLAlchemy | Interactive web applications |
+| **Python (Pandas)** | psycopg2 / SQLAlchemy | Exploratory analysis, notebooks |
 
 ---
 
-## 🚀 Instalación y Configuración
+## 🚀 Installation & Setup
 
 ```bash
-# 1. Clonar repositorio
-git clone https://github.com/tu-usuario/ipc-argentina-pipeline.git
+# 1. Clone the repository
+git clone https://github.com/your-username/ipc-argentina-pipeline.git
 cd ipc-argentina-pipeline
 
-# 2. Crear entorno virtual e instalar dependencias
+# 2. Create virtual environment and install dependencies
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# 3. Configurar credenciales (crear archivo .env)
+# 3. Set up credentials (create .env file)
 cp .env.example .env
-# Editar .env con tus credenciales de Supabase
+# Edit .env with your Supabase credentials
 
-# 4. Carga inicial
-python ipc_scraper.py              # Descarga datos
-python db_setup_secure.py          # Crea estructura y carga
+# 4. Initial load
+python ipc_scraper.py       # Download data
+python db_setup_secure.py   # Create structure and load
 
-# 5. Actualización mensual (automatizar con cron/GitHub Actions)
+# 5. Monthly update (automate with cron/GitHub Actions)
 python update_monthly.py
 ```
 
 ---
 
-## 🛠️ Stack Tecnológico
+## 🛠️ Tech Stack
 
-| Componente | Tecnología |
-|------------|------------|
-| **Lenguaje** | Python 3.10+ |
+| Component | Technology |
+|-----------|------------|
+| **Language** | Python 3.10+ |
 | **ETL** | Pandas, Requests |
-| **Base de Datos** | PostgreSQL (Supabase) |
+| **Database** | PostgreSQL (Supabase) |
 | **ORM** | SQLAlchemy |
-| **Orquestación** | GitHub Actions / Cron |
+| **Orchestration** | GitHub Actions / Cron |
 | **BI Tools** | Power BI, Tableau, Streamlit |
 
 ---
 
-## 📚 Referencias
+## 📚 References
 
-- [INDEC - Metodología IPC](https://www.indec.gob.ar/indec/web/Nivel4-Tema-3-5-31)
-- [datos.gob.ar - Dataset IPC](https://datos.gob.ar/dataset/sspm-indice-precios-consumidor-nacional-ipc-nivel-general-categorias)
+- [INDEC - CPI Methodology](https://www.indec.gob.ar/indec/web/Nivel4-Tema-3-5-31)
+- [datos.gob.ar - CPI Dataset](https://datos.gob.ar/dataset/sspm-indice-precios-consumidor-nacional-ipc-nivel-general-categorias)
 - [Supabase Documentation](https://supabase.com/docs)
