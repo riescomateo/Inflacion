@@ -1,0 +1,34 @@
+name: Monthly Inflation Update
+
+on:
+  schedule:
+    # Se ejecuta el día 15 de cada mes a las 15:00 UTC (ajustar según cuando INDEC publica)
+    - cron: '0 15 15 * *'
+  workflow_dispatch: # Permite ejecutarlo manualmente para probar
+
+jobs:
+  update-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run update script
+        env:
+          # Aquí vinculamos los secretos de GitHub con las variables que espera tu script
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+        run: python update_monthly.py # CAMBIA ESTO por el nombre real de tu script
