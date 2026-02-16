@@ -150,15 +150,6 @@ def extract_metadata(series_name, dataset_type):
         else:
             classification = strip_region_noise(name)
 
-    elif dataset_type == 'goods_services':
-        category = "Naturaleza"
-        if   'bien' in name and 'servicio' not in name:
-            classification = "Bienes"
-        elif 'servicio' in name:
-            classification = "Servicios"
-        else:
-            classification = strip_region_noise(name)
-
     else:
         category       = "Otros"
         classification = name
@@ -176,7 +167,7 @@ def build_incidence_df(start_date):
     with columns: time_index, region, category, classification, incidence
     """
     print("\n" + "=" * 70)
-    print("STEP 1 — Downloading incidence data (145.10, 145.11, 145.12)")
+    print("STEP 1 — Downloading incidence data (145.12, 145.10)")
     print("=" * 70)
 
     frames = []
@@ -296,12 +287,15 @@ def build_mom_variation_df(start_date):
 
 def merge_datasets(df_incidence, df_mom):
     """
-    Left-joins incidence data with mom_variation on
-    (time_index, region, category, classification).
+    Merges incidence and mom_variation data.
 
-    Rows from divisions_by_region and goods_services will have NaN
-    in mom_variation — this is expected since 145.9 only covers the
-    Análisis/Nivel General breakdown, not all 12 divisions or goods/services.
+    Strategy:
+    - Regional rows (6 regions): LEFT JOIN — incidence is the base,
+      mom_variation fills in for Análisis/Nivel General, NaN for divisions.
+    - Nacional rows: only exist in df_mom (145.9), so they are appended
+      separately with incidence = NaN.
+
+    Result: all 7 regions present, each with whatever metrics are available.
     """
     print("\n" + "=" * 70)
     print("STEP 3 — Merging incidence + MoM variation")
@@ -310,18 +304,34 @@ def merge_datasets(df_incidence, df_mom):
     df_mom['time_index']       = pd.to_datetime(df_mom['time_index'])
     df_incidence['time_index'] = pd.to_datetime(df_incidence['time_index'])
 
-    df_final = df_incidence.merge(
+    # LEFT JOIN for the 6 regional rows (incidence as base)
+    df_regional = df_incidence.merge(
         df_mom[['time_index', 'region', 'category', 'classification', 'mom_variation']],
         on=['time_index', 'region', 'category', 'classification'],
         how='left'
     )
 
-    matched = df_final['mom_variation'].notna().sum()
-    total   = len(df_final)
-    print(f"  ✓ Total rows:              {total:,}")
-    print(f"  ✓ Rows with MoM variation: {matched:,} ({matched/total*100:.1f}%)")
-    print(f"  ✓ Rows incidence-only:     {total - matched:,} "
-          f"(divisions & goods/services — expected)")
+    # Nacional rows exist only in df_mom — add them with incidence = NaN
+    df_nacional = df_mom[df_mom['region'] == 'Nacional'].copy()
+    df_nacional['incidence'] = float('nan')
+
+    # Concat both and sort
+    df_final = pd.concat([df_regional, df_nacional], ignore_index=True)
+    df_final = df_final.sort_values(
+        ['time_index', 'region', 'category', 'classification']
+    ).reset_index(drop=True)
+
+    total        = len(df_final)
+    has_mom      = df_final['mom_variation'].notna().sum()
+    has_inc      = df_final['incidence'].notna().sum()
+    has_both     = df_final[df_final['mom_variation'].notna() & df_final['incidence'].notna()].shape[0]
+    nacional_cnt = (df_final['region'] == 'Nacional').sum()
+
+    print(f"  ✓ Total rows:                {total:,}")
+    print(f"  ✓ Rows with incidence:       {has_inc:,}")
+    print(f"  ✓ Rows with MoM variation:   {has_mom:,}")
+    print(f"  ✓ Rows with both metrics:    {has_both:,}")
+    print(f"  ✓ Nacional rows (mom only):  {nacional_cnt:,}")
 
     return df_final
 
