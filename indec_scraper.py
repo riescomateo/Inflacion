@@ -1,131 +1,116 @@
 """
 Script to download IPC (Consumer Price Index) data from datos.gob.ar
-With verified and functional URLs
+Produces two metrics per row:
+  - incidence:      contribution of each category to total regional inflation (pp)
+  - mom_variation:  month-over-month % change, calculated from the base index (145.9)
 """
 
 import pandas as pd
 import requests
 from io import StringIO
-from datetime import datetime
 import sys
 
 START_DATE = "2023-12-01"
 
-# Verified and functional download URLs from infra.datos.gob.ar
-DOWNLOAD_URLS = {
-    # Dataset 145 - General Level and Categories
-    'general_level_categories': {
+# --- INCIDENCE ENDPOINTS ---
+# These publish the contribution (in percentage points) of each
+# category/division/type to the regional total inflation for that month.
+INCIDENCE_URLS = {
+    'categories_by_region': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.12/download/ipc-incidencia-categorias-nivel-general.csv',
-        'description': 'IPC Nivel General y Categorías (Núcleo, Regulados, Estacionales) por Región'
+        'description': 'IPC Categories (Core, Regulated, Seasonal) by Region'
     },
-    
-    # Dataset 145 - Divisions (Chapters) by Region
     'divisions_by_region': {
         'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.10/download/ipc-incidencia-absoluta-mensual-region-capitulo.csv',
-        'description': 'IPC Divisiones (12 capítulos) por Región'
+        'description': 'IPC Divisions (12 chapters) by Region'
     },
-    
-    # Dataset 145 - Goods and Services by Region
-    'goods_services': {
-        'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.11/download/ipc-incidencia-mensual-bienes-servicios.csv',
-        'description': 'IPC Bienes y Servicios por Región'
-    }
+}
+
+# Nature mapping derived from classification.
+# Análisis / Nivel General rows → NaN (they are aggregates, not a single nature)
+NATURE_MAP = {
+    "Alimentos y bebidas":          "Bienes",
+    "Bebidas alcohólicas y tabaco": "Bienes",
+    "Prendas de vestir y calzado":  "Bienes",
+    "Vivienda y servicios básicos": "Servicios",
+    "Equipamiento del hogar":       "Bienes",
+    "Salud":                        "Servicios",
+    "Transporte":                   "Servicios",
+    "Comunicación":                 "Servicios",
+    "Recreación y cultura":         "Mixto",
+    "Educación":                    "Servicios",
+    "Restaurantes y hoteles":       "Servicios",
+    "Bienes y servicios varios":    "Mixto",
+}
+
+# --- BASE INDEX ENDPOINT ---
+# Publishes the cumulative index (base Dec 2016 = 100) for all regions
+# including Nacional. Used to compute mom_variation via pct_change().
+BASE_INDEX_URL = {
+    'url': 'http://infra.datos.gob.ar/catalog/sspm/dataset/145/distribution/145.9/download/indice-precios-al-consumidor-apertura-por-categorias-base-diciembre-2016-mensual.csv',
+    'description': 'IPC Base Index (Dec 2016=100) - All regions including Nacional'
+}
+
+# Region keyword map for column name parsing
+REGION_MAP = {
+    'gba':       'GBA',
+    'pampeana':  'Pampeana',
+    'noa':       'NOA',
+    'noroeste':  'NOA',
+    'nea':       'NEA',
+    'noreste':   'NEA',
+    'cuyo':      'Cuyo',
+    'patagonia': 'Patagonia',
+    'nacional':  'Nacional',
 }
 
 
-def download_and_process_csv(name, config, start_date):
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def fetch_csv(url):
+    """Downloads a CSV from a URL and returns a DataFrame."""
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+    return pd.read_csv(StringIO(response.text))
+
+
+def detect_region(name):
     """
-    Downloads and processes a CSV into the required format
+    Detects the region from a column name string.
+    Returns 'Nacional' if no regional keyword is found
+    (columns with no prefix in INDEC datasets belong to the national aggregate).
     """
-    print(f"\n{'='*70}")
-    print(f"Downloading: {name}")
-    print(f"Description: {config['description']}")
-    print(f"URL: {config['url']}")
-    print('='*70)
-    
-    try:
-        # Download
-        response = requests.get(config['url'], timeout=60)
-        response.raise_for_status()
-        
-        # Read CSV
-        df = pd.read_csv(StringIO(response.text))
-        print(f"✓ Downloaded: {len(df)} rows, {len(df.columns)} columns")
-        
-        # Convert date
-        date_col = df.columns[0]
-        df[date_col] = pd.to_datetime(df[date_col])
-        
-        # Filter by date
-        df_filtered = df[df[date_col] >= start_date].copy()
-        print(f"✓ Filtered from {start_date}: {len(df_filtered)} rows")
-        
-        # Convert to long format
-        df_long = pd.melt(
-            df_filtered,
-            id_vars=[date_col],
-            var_name='original_series',
-            value_name='value'
-        )
-        
-        df_long = df_long.rename(columns={date_col: 'time_index'})
-        
-        # Extract region, category and classification from column name
-        df_long[['region', 'category', 'classification']] = df_long['original_series'].apply(
-            lambda x: pd.Series(extract_metadata(x, name))
-        )
-        
-        # Drop temporary column
-        df_long = df_long.drop('original_series', axis=1)
-        
-        # Drop null values
-        df_long = df_long.dropna(subset=['value'])
-        
-        print(f"✓ Converted to long format: {len(df_long)} records")
-        print(f"  - Unique regions: {df_long['region'].nunique()}")
-        print(f"  - Unique classifications: {df_long['classification'].nunique()}")
-        
-        return df_long
-        
-    except requests.exceptions.RequestException as e:
-        print(f"✗ Download error: {e}")
-        return None
-    except Exception as e:
-        print(f"✗ Processing error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+    for keyword, region in REGION_MAP.items():
+        if keyword in name:
+            return region
+    return 'Nacional'
+
+
+def strip_region_noise(name):
+    """Removes all region keywords and noise words from a column name."""
+    noise = list(REGION_MAP.keys()) + [
+        'ipc', 'nivel', 'general', 'mensual', 'acumulada', 'tasa',
+        'variacion', 'incidencia', 'absoluta', 'base', 'diciembre'
+    ]
+    for word in noise:
+        name = name.replace(word, '')
+    return name.strip()
 
 
 def extract_metadata(series_name, dataset_type):
     """
-    Extracts region, category and classification from the series name.
-    Search strings are kept in Spanish to match source data.
-    Returned values are also kept in Spanish for data consistency.
+    Extracts (region, category, classification) from a column name.
+    Search strings are in Spanish to match INDEC source column names.
     """
     name = str(series_name).lower().replace('_', ' ')
-    
-    # Detect region
-    region = "Nacional"
-    if 'gba' in name:
-        region = "GBA"
-    elif 'pampeana' in name:
-        region = "Pampeana"
-    elif 'noa' in name or 'noroeste' in name:
-        region = "NOA"
-    elif 'nea' in name or 'noreste' in name:
-        region = "NEA"
-    elif 'cuyo' in name:
-        region = "Cuyo"
-    elif 'patagonia' in name:
-        region = "Patagonia"
-    
-    # Determine category and classification based on dataset type
-    if dataset_type == 'general_level_categories':
+    region = detect_region(name)
+
+    if dataset_type in ('categories_by_region', 'categories_nacional'):
         category = "Análisis"
-        
         if 'nivel general' in name:
-            category = "Nivel General"
+            category       = "Nivel General"
             classification = "Total"
         elif 'nucleo' in name or 'núcleo' in name:
             classification = "Núcleo"
@@ -134,12 +119,11 @@ def extract_metadata(series_name, dataset_type):
         elif 'estacional' in name:
             classification = "Estacionales"
         else:
-            classification = name.replace(region.lower(), '').strip()
-    
+            classification = strip_region_noise(name)
+
     elif dataset_type == 'divisions_by_region':
         category = "División"
-        
-        if 'alimentos bebidas no alcoholica' in name:
+        if   'alimentos' in name and 'no alcoholica' in name:
             classification = "Alimentos y bebidas"
         elif 'bebidas alcoholica' in name or 'tabaco' in name:
             classification = "Bebidas alcohólicas y tabaco"
@@ -164,120 +148,248 @@ def extract_metadata(series_name, dataset_type):
         elif 'otros' in name or 'bienes servicios' in name:
             classification = "Bienes y servicios varios"
         else:
-            classification = name.replace(region.lower(), '').strip()
-    
+            classification = strip_region_noise(name)
+
     elif dataset_type == 'goods_services':
         category = "Naturaleza"
-        
-        if 'bien' in name and 'servicio' not in name:
+        if   'bien' in name and 'servicio' not in name:
             classification = "Bienes"
         elif 'servicio' in name:
             classification = "Servicios"
         else:
-            classification = name.replace(region.lower(), '').strip()
-    
+            classification = strip_region_noise(name)
+
     else:
-        category = "Otros"
+        category       = "Otros"
         classification = name
-    
+
     return region, category, classification
 
 
+# =============================================================================
+# STEP 1 — INCIDENCE DATA (145.10, 145.11, 145.12)
+# =============================================================================
+
+def build_incidence_df(start_date):
+    """
+    Downloads all incidence endpoints and returns a single long-format DataFrame
+    with columns: time_index, region, category, classification, incidence
+    """
+    print("\n" + "=" * 70)
+    print("STEP 1 — Downloading incidence data (145.10, 145.11, 145.12)")
+    print("=" * 70)
+
+    frames = []
+
+    for dataset_type, config in INCIDENCE_URLS.items():
+        print(f"\n  → {config['description']}")
+        try:
+            df = fetch_csv(config['url'])
+            date_col = df.columns[0]
+            df[date_col] = pd.to_datetime(df[date_col])
+            df = df[df[date_col] >= start_date].copy()
+
+            df_long = pd.melt(df, id_vars=[date_col],
+                              var_name='series', value_name='incidence')
+            df_long = df_long.rename(columns={date_col: 'time_index'})
+            df_long = df_long.dropna(subset=['incidence'])
+
+            df_long[['region', 'category', 'classification']] = (
+                df_long['series']
+                .apply(lambda x: pd.Series(extract_metadata(x, dataset_type)))
+            )
+            df_long = df_long.drop(columns='series')
+            df_long['source'] = dataset_type  # track origin for deduplication
+
+            print(f"     ✓ {len(df_long):,} records — "
+                  f"regions: {sorted(df_long['region'].unique())}")
+            frames.append(df_long)
+
+        except Exception as e:
+            print(f"     ✗ Error: {e}")
+
+    if not frames:
+        return None
+
+    result = pd.concat(frames, ignore_index=True)
+
+    # Deduplicate: if same (time_index, region, category, classification) appears
+    # from multiple endpoints, keep the one from the most specific source.
+    # Priority: divisions_by_region > categories_by_region
+    source_priority = {
+        'divisions_by_region':  1,
+        'categories_by_region': 2,
+    }
+    result['_priority'] = result['source'].map(source_priority)
+    result = (result
+              .sort_values('_priority')
+              .drop_duplicates(
+                  subset=['time_index', 'region', 'category', 'classification'],
+                  keep='first'
+              )
+              .drop(columns=['_priority', 'source'])
+              .reset_index(drop=True))
+
+    print(f"\n  ✓ Total incidence records after dedup: {len(result):,}")
+    return result
+
+
+# =============================================================================
+# STEP 2 — MOM VARIATION from base index (145.9)
+# =============================================================================
+
+def build_mom_variation_df(start_date):
+    """
+    Downloads the base index (145.9), computes month-over-month % change
+    using pct_change() per series, and returns a long-format DataFrame with:
+    time_index, region, category, classification, mom_variation
+
+    Downloads full history from 2016-12-01 so pct_change() has a valid
+    previous value for the very first row of the filtered period.
+    """
+    print("\n" + "=" * 70)
+    print("STEP 2 — Calculating MoM variation from base index (145.9)")
+    print("=" * 70)
+
+    try:
+        df = fetch_csv(BASE_INDEX_URL['url'])
+        date_col = df.columns[0]
+        df[date_col] = pd.to_datetime(df[date_col])
+        df = df.sort_values(date_col).copy()
+
+        value_cols = [c for c in df.columns if c != date_col]
+
+        # Compute pct_change() on full history so first filtered row is valid
+        mom = df[value_cols].pct_change() * 100
+        mom[date_col] = df[date_col].values
+
+        # Now filter to start_date
+        mom = mom[mom[date_col] >= start_date].copy()
+
+        df_long = pd.melt(mom, id_vars=[date_col],
+                          var_name='series', value_name='mom_variation')
+        df_long = df_long.rename(columns={date_col: 'time_index'})
+        df_long = df_long.dropna(subset=['mom_variation'])
+
+        df_long[['region', 'category', 'classification']] = (
+            df_long['series']
+            .apply(lambda x: pd.Series(extract_metadata(x, 'categories_nacional')))
+        )
+        df_long = df_long.drop(columns='series')
+
+        df_long['mom_variation'] = df_long['mom_variation'].round(4)
+
+        print(f"  ✓ {len(df_long):,} MoM records — "
+              f"regions: {sorted(df_long['region'].unique())}")
+        return df_long
+
+    except Exception as e:
+        print(f"  ✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+# =============================================================================
+# STEP 3 — MERGE incidence + mom_variation
+# =============================================================================
+
+def merge_datasets(df_incidence, df_mom):
+    """
+    Left-joins incidence data with mom_variation on
+    (time_index, region, category, classification).
+
+    Rows from divisions_by_region and goods_services will have NaN
+    in mom_variation — this is expected since 145.9 only covers the
+    Análisis/Nivel General breakdown, not all 12 divisions or goods/services.
+    """
+    print("\n" + "=" * 70)
+    print("STEP 3 — Merging incidence + MoM variation")
+    print("=" * 70)
+
+    df_mom['time_index']       = pd.to_datetime(df_mom['time_index'])
+    df_incidence['time_index'] = pd.to_datetime(df_incidence['time_index'])
+
+    df_final = df_incidence.merge(
+        df_mom[['time_index', 'region', 'category', 'classification', 'mom_variation']],
+        on=['time_index', 'region', 'category', 'classification'],
+        how='left'
+    )
+
+    matched = df_final['mom_variation'].notna().sum()
+    total   = len(df_final)
+    print(f"  ✓ Total rows:              {total:,}")
+    print(f"  ✓ Rows with MoM variation: {matched:,} ({matched/total*100:.1f}%)")
+    print(f"  ✓ Rows incidence-only:     {total - matched:,} "
+          f"(divisions & goods/services — expected)")
+
+    return df_final
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
 def main():
-    """Main function"""
     print("=" * 80)
-    print("IPC DATA DOWNLOAD - INDEC (datos.gob.ar)")
-    print("Script with verified URLs")
+    print("IPC DATA PIPELINE - INDEC (datos.gob.ar)")
+    print("Output columns: incidence | mom_variation")
     print("=" * 80)
     print(f"Start date: {START_DATE}")
-    print(f"Datasets to download: {len(DOWNLOAD_URLS)}")
-    print("=" * 80)
-    
-    # List to store DataFrames
-    dataframes = []
-    
-    # Download each dataset
-    for name, config in DOWNLOAD_URLS.items():
-        df = download_and_process_csv(name, config, START_DATE)
-        if df is not None:
-            dataframes.append(df)
-    
-    # Check that data was downloaded
-    if not dataframes:
-        print("\n" + "=" * 80)
-        print("⚠️  ERROR: Could not download data")
-        print("=" * 80)
-        print("\nPossible causes:")
-        print("1. Internet connection issues")
-        print("2. datos.gob.ar servers are down")
-        print("3. URLs have changed")
-        print("\nRecommendation:")
-        print("- Check your connection")
-        print("- Try again in a few minutes")
-        print("- Visit: https://datos.gob.ar/")
+
+    # Step 1 — Incidence
+    df_incidence = build_incidence_df(START_DATE)
+    if df_incidence is None:
+        print("❌ Could not build incidence dataset. Aborting.")
         sys.exit(1)
-    
-    # Consolidate all DataFrames
-    print("\n" + "=" * 80)
-    print("CONSOLIDATING DATA...")
-    print("=" * 80)
-    
-    df_final = pd.concat(dataframes, ignore_index=True)
-    
-    # Clean data
-    df_final = df_final.dropna(subset=['value'])
-    df_final = df_final.sort_values(['time_index', 'region', 'category', 'classification'])
-    df_final = df_final.reset_index(drop=True)
-    
-    # Format date
+
+    # Step 2 — MoM variation
+    df_mom = build_mom_variation_df(START_DATE)
+    if df_mom is None:
+        print("❌ Could not build MoM variation dataset. Aborting.")
+        sys.exit(1)
+
+    # Step 3 — Merge
+    df_final = merge_datasets(df_incidence, df_mom)
+
+    # Final cleanup
     df_final['time_index'] = pd.to_datetime(df_final['time_index']).dt.strftime('%Y-%m-%d')
-    
+
+    # Add nature column derived from classification
+    # Análisis / Nivel General rows → NaN (aggregates, no single nature)
+    df_final['nature'] = df_final['classification'].map(NATURE_MAP)
+
+    df_final = df_final.sort_values(
+        ['time_index', 'region', 'category', 'classification']
+    ).reset_index(drop=True)
+
     # Summary
-    print(f"\n✓ CONSOLIDATED DATA:")
+    print("\n" + "=" * 80)
+    print("FINAL DATASET SUMMARY")
+    print("=" * 80)
     print(f"  {'Total records:':<30} {len(df_final):>10,}")
-    print(f"  {'Period:':<30} {df_final['time_index'].min()} to {df_final['time_index'].max()}")
+    print(f"  {'Period:':<30} {df_final['time_index'].min()} → {df_final['time_index'].max()}")
     print(f"  {'Unique regions:':<30} {df_final['region'].nunique():>10}")
     print(f"  {'Unique categories:':<30} {df_final['category'].nunique():>10}")
     print(f"  {'Unique classifications:':<30} {df_final['classification'].nunique():>10}")
-    
-    # Distribution by region
-    print("\n" + "=" * 80)
-    print("DISTRIBUTION BY REGION:")
-    print("=" * 80)
+
+    print("\nDISTRIBUTION BY REGION:")
     region_counts = df_final.groupby('region').size().sort_values(ascending=False)
     for region, count in region_counts.items():
         print(f"  {region:<20} {count:>10,} records")
-    
-    # Distribution by category
-    print("\n" + "=" * 80)
-    print("DISTRIBUTION BY CATEGORY:")
-    print("=" * 80)
-    cat_counts = df_final.groupby('category').size().sort_values(ascending=False)
-    for cat, count in cat_counts.items():
-        print(f"  {cat:<20} {count:>10,} records")
-    
-    # Save file
+
+    # Save
     output_file = 'ipc_indec_datos.csv'
     df_final.to_csv(output_file, index=False, encoding='utf-8-sig')
-    
-    print("\n" + "=" * 80)
-    print(f"✓ FILE SAVED: {output_file}")
-    print("=" * 80)
-    
-    # Data sample
-    print("\nDATA SAMPLE (first 20 rows):")
-    print("=" * 80)
-    pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', 120)
-    print(df_final.head(20).to_string(index=False))
-    
-    print("\n" + "=" * 80)
-    print("✓ DOWNLOAD COMPLETED SUCCESSFULLY")
-    print("=" * 80)
-    print(f"\nCSV format:")
-    print(f"  - Columns: time_index, value, region, category, classification")
-    print(f"  - Format: LONG (unpivoted)")
-    print(f"  - Encoding: UTF-8 with BOM")
+
+    print(f"\n✅ FILE SAVED: {output_file}")
+    print(f"   Columns: time_index, region, category, classification, "
+          f"nature, incidence, mom_variation")
+    print(f"\n   Nature distribution:")
+    nature_counts = df_final['nature'].value_counts(dropna=False)
+    for nature, count in nature_counts.items():
+        label = nature if pd.notna(nature) else "NaN (Análisis/Nivel General)"
+        print(f"   {label:<35} {count:>8,} records")
     print(f"\nData is ready for analysis!")
 
 
